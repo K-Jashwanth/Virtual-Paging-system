@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Virtual Paging System Simulator</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 text-gray-900 p-6">
+  <div class="max-w-4xl mx-auto">
+    <h1 class="text-3xl font-bold mb-6 text-center">Virtual Paging System Simulator</h1>
+
+    <div class="bg-white p-6 rounded-lg shadow-md">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label class="block font-medium">Page Reference String:</label>
+          <input type="text" id="pageInput" placeholder="e.g. 7 0 1 2 0 3 0 4"
+                 class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400">
+        </div>
+        <div>
+          <label class="block font-medium">Frames:</label>
+          <input type="number" id="frameCount" value="3" min="1"
+                 class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400">
+        </div>
+        <div class="flex items-end gap-2">
+          <button onclick="startSimulation()"
+                  class="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700 transition w-full">Start</button>
+          <button onclick="resetSimulation()"
+                  class="bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg hover:bg-gray-600 transition w-full">Reset</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-6 overflow-x-auto">
+      <div id="timeline" class="flex gap-2 p-2 whitespace-nowrap bg-white shadow rounded-lg mt-4"></div>
+    </div>
+
+    <div class="mt-8">
+      <div id="pageInfo" class="text-lg font-medium mb-2 transition-all duration-500"></div>
+      <div id="frames" class="flex gap-4 transition-all duration-500"></div>
+    </div>
+
+    <div class="mt-6 bg-white p-4 rounded-lg shadow-md flex flex-wrap gap-6">
+      <p class="text-lg font-semibold">Page Faults: <span id="faultCount" class="text-red-600 font-bold">0</span></p>
+      <p class="text-lg font-semibold">Page Hits: <span id="hitCount" class="text-green-600 font-bold">0</span></p>
+      <p class="text-lg font-semibold">Hit Ratio: <span id="hitRatio" class="text-blue-600 font-bold">0%</span></p>
+    </div>
+
+    <div class="mt-6 bg-white p-4 rounded-lg shadow-md">
+      <h3 class="text-xl font-semibold">Algorithm Comparison:</h3>
+      <div id="algorithmResults" class="mt-4"></div>
+      <div id="bestAlgorithm" class="mt-4 text-lg font-semibold text-green-600"></div>
+    </div>
+  </div>
+
+  <script>
+    let animationDelay = 800;
+
+    function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+    function resetSimulation() {
+      document.getElementById('frames').innerHTML = '';
+      document.getElementById('timeline').innerHTML = '';
+      document.getElementById('faultCount').innerText = '0';
+      document.getElementById('hitCount').innerText = '0';
+      document.getElementById('hitRatio').innerText = '0%';
+      document.getElementById('pageInfo').innerText = '';
+      document.getElementById('algorithmResults').innerHTML = '';
+      document.getElementById('bestAlgorithm').innerText = '';
+    }
+
+    async function startSimulation() {
+      resetSimulation();
+      const input = document.getElementById('pageInput').value.trim().split(/\s+/).map(Number);
+      const frameCount = parseInt(document.getElementById('frameCount').value);
+
+      let frames = [];
+      let results = {};
+
+      const frameDivs = document.getElementById('frames');
+      const timeline = document.getElementById('timeline');
+      const pageInfo = document.getElementById('pageInfo');
+
+      for (let i = 0; i < frameCount; i++) {
+        const div = document.createElement('div');
+        div.className = 'w-16 h-16 border-2 border-gray-800 rounded-lg flex justify-center items-center text-xl font-bold bg-white shadow transition-all duration-300';
+        frameDivs.appendChild(div);
+      }
+
+      input.forEach(page => {
+        const bubble = document.createElement('div');
+        bubble.textContent = page;
+        bubble.className = 'px-3 py-2 bg-blue-100 text-blue-800 rounded-full text-sm shadow transition-all duration-300';
+        timeline.appendChild(bubble);
+      });
+
+      const algorithms = ['FIFO', 'LRU', 'Optimal', 'MRU'];
+      for (let algorithm of algorithms) {
+        const result = await simulateAlgorithm(input, frameCount, algorithm);
+        results[algorithm] = result;
+      }
+
+      displayAlgorithmResults(results);
+      suggestBestAlgorithm(results);
+    }
+
+    async function simulateAlgorithm(input, frameCount, algorithm) {
+      let frames = [];
+      let faults = 0;
+      let hits = 0;
+
+      const frameDivs = document.getElementById('frames');
+      const timeline = document.getElementById('timeline');
+      const pageInfo = document.getElementById('pageInfo');
+
+      for (let i = 0; i < input.length; i++) {
+        const page = input[i];
+        const frameElems = document.querySelectorAll('#frames div');
+
+        document.querySelectorAll('#timeline div').forEach((b, idx) => {
+          b.classList.remove('bg-blue-600', 'text-white');
+          if (idx === i) {
+            b.classList.add('bg-blue-600', 'text-white');
+          }
+        });
+
+        pageInfo.innerHTML = `Requesting Page: <span class="text-blue-600 font-bold">${page}</span>`;
+        let isHit = frames.includes(page);
+
+        if (isHit) {
+          hits++;
+          highlightFrame(page, 'bg-green-200 border-green-600');
+        } else {
+          faults++;
+          if (frames.length < frameCount) {
+            frames.push(page);
+          } else {
+            switch (algorithm) {
+              case 'FIFO':
+                frames.shift();
+                break;
+              case 'LRU': {
+                let lru = Infinity, lruIndex = -1;
+                for (let j = 0; j < frames.length; j++) {
+                  let lastUsed = -1;
+                  for (let k = i - 1; k >= 0; k--) {
+                    if (input[k] === frames[j]) {
+                      lastUsed = k;
+                      break;
+                    }
+                  }
+                  if (lastUsed < lru) {
+                    lru = lastUsed;
+                    lruIndex = j;
+                  }
+                }
+                frames.splice(lruIndex, 1);
+                break;
+              }
+              case 'Optimal': {
+                let farthest = -1, index = -1;
+                for (let j = 0; j < frames.length; j++) {
+                  let found = false;
+                  for (let k = i + 1; k < input.length; k++) {
+                    if (frames[j] === input[k]) {
+                      if (k > farthest) {
+                        farthest = k;
+                        index = j;
+                      }
+                      found = true;
+                      break;
+                    }
+                  }
+                  if (!found) {
+                    index = j;
+                    break;
+                  }
+                }
+                frames.splice(index, 1);
+                break;
+              }
+              case 'MRU': {
+                let mostRecent = -1, index = -1;
+                for (let j = 0; j < frames.length; j++) {
+                  for (let k = i - 1; k >= 0; k--) {
+                    if (input[k] === frames[j]) {
+                      if (k > mostRecent) {
+                        mostRecent = k;
+                        index = j;
+                      }
+                      break;
+                    }
+                  }
+                }
+                frames.splice(index, 1);
+                break;
+              }
+            }
+            frames.push(page);
+          }
+          highlightFrame(page, 'bg-red-200 border-red-600');
+        }
+
+        updateFrames(frames);
+        await sleep(animationDelay);
+        clearHighlights();
+      }
+
+      return { faults, hits };
+    }
+
+    function displayAlgorithmResults(results) {
+      const algorithmResultsDiv = document.getElementById('algorithmResults');
+      algorithmResultsDiv.innerHTML = '';
+      for (let [algorithm, { faults, hits }] of Object.entries(results)) {
+        const hitRatio = ((hits / (hits + faults)) * 100).toFixed(2);
+        algorithmResultsDiv.innerHTML += `
+          <div>
+            <p class="font-semibold">${algorithm}:</p>
+            <p>Page Faults: <span class="text-red-600">${faults}</span></p>
+            <p>Page Hits: <span class="text-green-600">${hits}</span></p>
+            <p>Hit Ratio: <span class="text-blue-600">${hitRatio}%</span></p>
+          </div>
+          <hr class="my-2">
+        `;
+      }
+    }
+
+    function suggestBestAlgorithm(results) {
+      let bestAlgorithm = '';
+      let minFaults = Infinity;
+
+      for (let [algorithm, { faults }] of Object.entries(results)) {
+        if (faults < minFaults) {
+          minFaults = faults;
+          bestAlgorithm = algorithm;
+        }
+      }
+
+      document.getElementById('bestAlgorithm').innerText = `Best Algorithm: ${bestAlgorithm} (with ${minFaults} page faults)`;
+    }
+
+    function updateFrames(frames) {
+      const frameElems = document.querySelectorAll('#frames div');
+      for (let i = 0; i < frameElems.length; i++) {
+        frameElems[i].textContent = frames[i] !== undefined ? frames[i] : '';
+      }
+    }
+
+    function highlightFrame(page, className) {
+      const frameElems = document.querySelectorAll('#frames div');
+      for (let elem of frameElems) {
+        if (elem.textContent == page) {
+          elem.classList.add(...className.split(' '));
+        }
+      }
+    }
+
+    function clearHighlights() {
+      const frameElems = document.querySelectorAll('#frames div');
+      for (let elem of frameElems) {
+        elem.className = 'w-16 h-16 border-2 border-gray-800 rounded-lg flex justify-center items-center text-xl font-bold bg-white shadow transition-all duration-300';
+      }
+    }
+  </script>
+</body>
+</html>
